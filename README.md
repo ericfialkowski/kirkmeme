@@ -20,11 +20,23 @@ Or build and run:
 go build -o kirkmeme .
 ./kirkmeme "KHAAAAN!"
 ./kirkmeme "He tasks me" rage.png
+./kirkmeme --color yellow "KHAAAAN!"
+./kirkmeme --color "#ff4500" "He tasks me" rage.png
 ```
 
 - Text is automatically uppercased.
 - Output defaults to `output.png` if not specified.
-- Keep `kirk.png` in the same directory as the binary (or cwd).
+- `kirk.png` is embedded in the binary — no external files needed.
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--color` | `white` | Text fill color — a name or hex value |
+
+**Named colors:** `white`, `black`, `red`, `green`, `blue`, `yellow`, `orange`, `cyan`, `magenta`, `pink`
+
+**Hex colors:** `#RRGGBB` or `#RGB` (e.g. `#ff4500`)
 
 ## Dependencies
 

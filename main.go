@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"flag"
 	"fmt"
 	"image"
 	_ "image/png"
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/fogleman/gg"
@@ -18,17 +20,30 @@ import (
 var kirkPNG []byte
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <text> [output.png]\n", filepath.Base(os.Args[0]))
+	colorFlag := flag.String("color", "white", "text fill color: name (white, yellow, red, …) or hex (#RRGGBB)")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [--color COLOR] <text> [output.png]\n", filepath.Base(os.Args[0]))
 		fmt.Fprintf(os.Stderr, "\nOverlays TEXT onto kirk.png in meme style.\n")
-		fmt.Fprintf(os.Stderr, "Output defaults to output.png if not specified.\n")
+		fmt.Fprintf(os.Stderr, "Output defaults to output.png if not specified.\n\n")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+
+	if flag.NArg() < 1 {
+		flag.Usage()
 		os.Exit(1)
 	}
 
-	text := strings.ToUpper(os.Args[1])
+	text := strings.ToUpper(flag.Arg(0))
 	outPath := "output.png"
-	if len(os.Args) >= 3 {
-		outPath = os.Args[2]
+	if flag.NArg() >= 2 {
+		outPath = flag.Arg(1)
+	}
+
+	fillR, fillG, fillB, err := parseColor(*colorFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(kirkPNG))
@@ -110,8 +125,8 @@ func main() {
 		}
 	}
 
-	// Draw white fill on top.
-	dc.SetRGB(1, 1, 1)
+	// Draw fill on top in the chosen color.
+	dc.SetRGB(fillR, fillG, fillB)
 	dc.DrawStringWrapped(wrapped, x, yTop, 0.5, 0, maxWidth, 1.2, gg.AlignCenter)
 
 	if err := dc.SavePNG(outPath); err != nil {
@@ -143,6 +158,37 @@ func wrapText(dc *gg.Context, text string, maxWidth float64) string {
 	}
 	lines = append(lines, cur)
 	return strings.Join(lines, "\n")
+}
+
+// parseColor converts a color name or hex string to normalized [0,1] RGB components.
+func parseColor(s string) (r, g, b float64, err error) {
+	named := map[string][3]float64{
+		"white":   {1, 1, 1},
+		"black":   {0, 0, 0},
+		"red":     {1, 0, 0},
+		"green":   {0, 0.8, 0},
+		"blue":    {0, 0.4, 1},
+		"yellow":  {1, 1, 0},
+		"orange":  {1, 0.5, 0},
+		"cyan":    {0, 1, 1},
+		"magenta": {1, 0, 1},
+		"pink":    {1, 0.4, 0.7},
+	}
+	if c, ok := named[strings.ToLower(s)]; ok {
+		return c[0], c[1], c[2], nil
+	}
+	hex := strings.TrimPrefix(s, "#")
+	if len(hex) == 3 {
+		hex = string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})
+	}
+	if len(hex) != 6 {
+		return 0, 0, 0, fmt.Errorf("unrecognized color %q (use a name or #RRGGBB)", s)
+	}
+	v, e := strconv.ParseUint(hex, 16, 32)
+	if e != nil {
+		return 0, 0, 0, fmt.Errorf("invalid hex color %q", s)
+	}
+	return float64(v>>16&0xff) / 255, float64(v>>8&0xff) / 255, float64(v&0xff) / 255, nil
 }
 
 // defaultFontPaths returns common locations for a bold TTF on Linux / macOS / Windows.
