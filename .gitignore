@@ -1,4 +1,5 @@
-/output.png
+*.png
+!kirk.png
 /kirkmeme
 /kirkmeme.exe
 .claude

@@ -8,12 +8,14 @@ import (
 	"image"
 	_ "image/png"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/fogleman/gg"
+	"golang.design/x/clipboard"
 )
 
 //go:embed kirk.png
@@ -21,10 +23,13 @@ var kirkPNG []byte
 
 func main() {
 	colorFlag := flag.String("color", "white", "text fill color: name (white, yellow, red, …) or hex (#RRGGBB)")
+	clipboardFlag := flag.Bool("clipboard", true, "copy result to system clipboard")
+	fileFlag := flag.Bool("file", false, "write result to a file")
+	noExclaimFlag := flag.Bool("no-exclaim", false, "disable auto-adding exclamation marks to text that lacks them")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--color COLOR] <text> [output.png]\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "Usage: %s [--color COLOR] [--clipboard=false] [--file] <text> [output.png]\n", filepath.Base(os.Args[0]))
 		fmt.Fprintf(os.Stderr, "\nOverlays TEXT onto kirk.png in meme style.\n")
-		fmt.Fprintf(os.Stderr, "Output defaults to output.png if not specified.\n\n")
+		fmt.Fprintf(os.Stderr, "Output file defaults to output.png if not specified.\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -35,6 +40,13 @@ func main() {
 	}
 
 	text := strings.ToUpper(flag.Arg(0))
+
+	if !*noExclaimFlag && !strings.HasSuffix(text, "!") {
+		n := rand.Intn(3) + 1
+		text += strings.Repeat("!", n)
+		fmt.Fprintf(os.Stderr, "Seriously? No exclamation mark? It's a MEME. Added %d for you.\n", n)
+	}
+
 	outPath := "output.png"
 	if flag.NArg() >= 2 {
 		outPath = flag.Arg(1)
@@ -129,12 +141,30 @@ func main() {
 	dc.SetRGB(fillR, fillG, fillB)
 	dc.DrawStringWrapped(wrapped, x, yTop, 0.5, 0, maxWidth, 1.2, gg.AlignCenter)
 
-	if err := dc.SavePNG(outPath); err != nil {
-		fmt.Fprintf(os.Stderr, "error saving image: %v\n", err)
+	// Encode the result to a PNG byte buffer.
+	var buf bytes.Buffer
+	if err := dc.EncodePNG(&buf); err != nil {
+		fmt.Fprintf(os.Stderr, "error encoding image: %v\n", err)
 		os.Exit(1)
 	}
+	pngBytes := buf.Bytes()
 
-	fmt.Printf("saved to %s\n", outPath)
+	if *clipboardFlag {
+		if err := clipboard.Init(); err != nil {
+			fmt.Fprintf(os.Stderr, "error initializing clipboard: %v\n", err)
+			os.Exit(1)
+		}
+		clipboard.Write(clipboard.FmtImage, pngBytes)
+		fmt.Println("copied to clipboard")
+	}
+
+	if *fileFlag {
+		if err := os.WriteFile(outPath, pngBytes, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "error saving image: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("saved to %s\n", outPath)
+	}
 }
 
 // wrapText simulates gg's word-wrapping to produce the multi-line string
