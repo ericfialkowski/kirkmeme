@@ -1,0 +1,52 @@
+version: 2
+
+builds:
+  - main: ./main.go
+    binary: kirkmeme
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # linux/arm64 requires a CGO cross-compiler + arm64 X11 headers; excluded for now
+    ignore:
+      - goos: linux
+        goarch: arm64
+    overrides:
+      # clipboard uses pure Go syscalls on Windows — no CGO needed
+      - goos: windows
+        env:
+          - CGO_ENABLED=0
+
+archives:
+  - formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+homebrew_casks:
+  - repository:
+      owner: ericfialkowski
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/ericfialkowski/kirkmeme
+    description: A CLI tool that overlays meme-style text onto the Kirk image.
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kirkmeme"]
