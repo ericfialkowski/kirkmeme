@@ -33,11 +33,11 @@ jobs:
         if: matrix.goos == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libx11-dev libxcb1-dev
 
-      - name: Build
+      - name: Build and archive
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: build --clean --config .goreleaser.${{ matrix.goos }}.yml
+          args: release --skip=publish,announce,validate --config .goreleaser.${{ matrix.goos }}.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -54,10 +54,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       - uses: actions/download-artifact@v4
         with:
           name: dist-linux
@@ -73,17 +69,58 @@ jobs:
           name: dist-windows
           path: dist-windows
 
-      - name: Merge dist directories
-        run: |
-          mkdir -p dist
-          find dist-linux dist-darwin dist-windows -mindepth 1 -maxdepth 1 -type d -exec cp -r {} dist/ \;
-          jq -s 'add' dist-linux/artifacts.json dist-darwin/artifacts.json dist-windows/artifacts.json > dist/artifacts.json
-          cp dist-linux/metadata.json dist/
-
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --skip=build
+      - name: Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Combine all archives into one list
+          ARCHIVES=$(find dist-linux dist-darwin dist-windows -maxdepth 1 \( -name "*.tar.gz" -o -name "*.zip" \) | sort | tr '\n' ' ')
+
+          # Combine per-OS checksum files into one
+          cat dist-linux/checksums_linux.txt dist-darwin/checksums_darwin.txt dist-windows/checksums_windows.txt > checksums.txt
+
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            $ARCHIVES \
+            checksums.txt
+
+      - name: Update Homebrew tap
+        env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA256_AMD64=$(grep "darwin_amd64.tar.gz" dist-darwin/checksums_darwin.txt | awk '{print $1}')
+          SHA256_ARM64=$(grep "darwin_arm64.tar.gz" dist-darwin/checksums_darwin.txt | awk '{print $1}')
+
+          cat > kirkmeme.rb << EOF
+          cask "kirkmeme" do
+            arch arm: "arm64", intel: "amd64"
+
+            version "${VERSION}"
+            sha256 arm:   "${SHA256_ARM64}",
+                   intel: "${SHA256_AMD64}"
+
+            url "https://github.com/ericfialkowski/kirkmeme/releases/download/v#{version}/kirkmeme_#{version}_darwin_#{arch}.tar.gz"
+
+            name "kirkmeme"
+            desc "A CLI tool that overlays meme-style text onto the Kirk image."
+            homepage "https://github.com/ericfialkowski/kirkmeme"
+
+            binary "kirkmeme"
+
+            postflight do
+              system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kirkmeme"]
+            end
+          end
+          EOF
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/ericfialkowski/homebrew-tap.git"
+          mkdir -p homebrew-tap/Casks
+          cp kirkmeme.rb homebrew-tap/Casks/kirkmeme.rb
+          cd homebrew-tap
+          git config user.name "GitHub Actions"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/kirkmeme.rb
+          git commit -m "Update kirkmeme to ${VERSION}"
+          git push
