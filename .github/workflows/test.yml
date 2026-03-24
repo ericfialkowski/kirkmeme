@@ -16,5 +16,8 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install X11 dev dependencies
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxcb1-dev
+
       - name: Run tests
         run: go test -v ./...
