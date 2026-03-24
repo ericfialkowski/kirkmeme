@@ -33,21 +33,20 @@ jobs:
         if: matrix.goos == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libx11-dev libxcb1-dev
 
-      - name: Run GoReleaser
+      - name: Build
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --split --clean
+          args: build --clean --config .goreleaser.${{ matrix.goos }}.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOS: ${{ matrix.goos }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.goos }}
           path: dist/
 
-  merge:
+  release:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -61,14 +60,30 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: dist-*
-          path: dist/
-          merge-multiple: true
+          name: dist-linux
+          path: dist-linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-darwin
+          path: dist-darwin
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-windows
+          path: dist-windows
+
+      - name: Merge dist directories
+        run: |
+          mkdir -p dist
+          find dist-linux dist-darwin dist-windows -mindepth 1 -maxdepth 1 -type d -exec cp -r {} dist/ \;
+          jq -s 'add' dist-linux/artifacts.json dist-darwin/artifacts.json dist-windows/artifacts.json > dist/artifacts.json
+          cp dist-linux/metadata.json dist/
 
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: continue --merge
+          args: release --skip=build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

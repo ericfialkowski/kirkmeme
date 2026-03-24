@@ -1,0 +1,11 @@
+version: 2
+builds:
+  - main: ./main.go
+    binary: kirkmeme
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
